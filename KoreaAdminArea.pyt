@@ -19,8 +19,59 @@ class Toolbox(object):
         self.alias = "KoreanAdminAreaCompleteTool"
 
         # List of tool classes associated with this toolbox
-        self.tools = [ZipsToGDB, CompleteCode]
+        self.tools = [ZipsToGDB, CompleteCode, FillRelations]
 
+
+class FillRelations(object):
+    def __init__(self):
+        self.label = "FillRelations"
+        self.description = "시도, 시군구, 읍면동, 리간에 관계를 정리한다."
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        sido_feature = arcpy.Parameter(
+            displayName="시도 행정경계 피처를 선택해주세요."
+            name="sido_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        sgg_feature = arcpy.Parameter(
+            displayName="시군구 행정경계 피처를 선택해주세요.",
+            name="sgg_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        emd_feature = arcpy.Paramter(
+            displayName="읍면동(법정) 행정경계 피처를 선택해주세요.",
+            name="emd_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        gemd_feature = arcpy.Parameter(
+            displayName="읍면동(행정) 행정경계 피처를 선택해주세요.",
+            name="gemd_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        params = [sido_feature, sgg_feature, emd_feature, gemd_feature]
+        return params
+    
+    def isLicensed(self):
+        return True
+    
+    def updateParameters(self, parameters):
+        return
+    
+    def updateMessages(self, parameters):
+        return
+    
+    def execute(self, parameters, messages):
+        sido_feature = parameters[0].value
+        sgg_feature = parameters[1].value
+        emd_feature = parameters[2].value
+        gemd_feature = parameters[3].value
+
+        
 
 class CompleteCode(object):
     def __init__(self):
