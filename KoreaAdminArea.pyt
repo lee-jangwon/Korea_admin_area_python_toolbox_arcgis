@@ -19,18 +19,20 @@ class Toolbox(object):
         self.alias = "KoreanAdminAreaCompleteTool"
 
         # List of tool classes associated with this toolbox
-        self.tools = [ZipsToGDB, CompleteCode, FillRelations]
+        self.tools = [ZipsToGDB, CompleteCode, JoinRelations]
 
 
-class FillRelations(object):
+class JoinRelations(object):
     def __init__(self):
-        self.label = "FillRelations"
+        """Define the tool (tool name is the name of the class)."""
+        self.label = "지역 관계 생성하기"
         self.description = "시도, 시군구, 읍면동, 리간에 관계를 정리한다."
         self.canRunInBackground = False
 
     def getParameterInfo(self):
+        """Define parameter definitions"""
         sido_feature = arcpy.Parameter(
-            displayName="시도 행정경계 피처를 선택해주세요."
+            displayName="시도 행정경계 피처를 선택해주세요.",
             name="sido_feature",
             datatype="DEFeatureClass",
             direction="Input",
@@ -41,7 +43,7 @@ class FillRelations(object):
             datatype="DEFeatureClass",
             direction="Input",
         )
-        emd_feature = arcpy.Paramter(
+        emd_feature = arcpy.Parameter(
             displayName="읍면동(법정) 행정경계 피처를 선택해주세요.",
             name="emd_feature",
             datatype="DEFeatureClass",
@@ -53,30 +55,122 @@ class FillRelations(object):
             datatype="DEFeatureClass",
             direction="Input",
         )
-        params = [sido_feature, sgg_feature, emd_feature, gemd_feature]
+        ri_feature = arcpy.Parameter(
+            displayName="리 행정경계 피처를 선택해주세요.",
+            name="ri_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        params = [
+            sido_feature,
+            sgg_feature,
+            emd_feature,
+            gemd_feature,
+            ri_feature,
+        ]
         return params
-    
-    def isLicensed(self):
-        return True
-    
-    def updateParameters(self, parameters):
-        return
-    
-    def updateMessages(self, parameters):
-        return
-    
-    def execute(self, parameters, messages):
-        sido_feature = parameters[0].value
-        sgg_feature = parameters[1].value
-        emd_feature = parameters[2].value
-        gemd_feature = parameters[3].value
 
-        
+    def isLicensed(self):
+        """Set whether tool is licensed to execute."""
+        return True
+
+    def updateParameters(self, parameters):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+        return
+
+    def updateMessages(self, parameters):
+        """Modify the messages created by internal validation for each tool
+        parameter.  This method is called after internal validation."""
+        return
+
+    def execute(self, parameters, messages):
+        sido_feature = Path(parameters[0].valueAsText)
+        sgg_feature = Path(parameters[1].valueAsText)
+        emd_feature = Path(parameters[2].valueAsText)
+        gemd_feature = Path(parameters[3].valueAsText)
+        ri_feature = Path(parameters[4].valueAsText)
+
+        # process sgg
+        if "SIDO_CD" not in arcpy.ListFields(str(sgg_feature)):
+            arcpy.management.AddField(
+                str(sgg_feature), "SIDO_CD", "TEXT", field_length=2, field_alias="시도 코드"
+            )
+            arcpy.management.CalculateField(str(sgg_feature), "SIDO_CD", "!SIG_CD![:2]")
+
+        # join sido to sgg
+        arcpy.AddMessage("Joining SGG")
+        arcpy.management.JoinField(
+            str(sgg_feature),
+            "SIDO_CD",
+            str(sido_feature),
+            "CTPRVN_CD",
+            fields=["CTP_ENG_NM", "CTP_KOR_NM"],
+        )
+
+        # process emd
+        if "SIG_CD" not in arcpy.ListFields(str(emd_feature)):
+            arcpy.management.AddField(
+                str(emd_feature), "SGG_CD", "TEXT", field_length=5, field_alias="시군구 코드"
+            )
+            arcpy.management.CalculateField(str(emd_feature), "SGG_CD", "!EMD_CD![:5]")
+        arcpy.AddMessage("Joining Emd")
+        arcpy.management.JoinField(
+            str(emd_feature),
+            "SGG_CD",
+            str(sgg_feature),
+            "SIG_CD",
+            fields=["SIG_ENG_NM", "SIG_KOR_NM", "CTP_ENG_NM", "CTP_KOR_NM"],
+        )
+
+        # process gemd
+        if "SIG_CD" not in arcpy.ListFields(str(gemd_feature)):
+            arcpy.management.AddField(
+                str(gemd_feature),
+                "SGG_CD",
+                "TEXT",
+                field_length=5,
+                field_alias="시군구 코드",
+            )
+            arcpy.management.CalculateField(str(gemd_feature), "SGG_CD", "!EMD_CD![:5]")
+        arcpy.AddMessage("Joining Gemd")
+        arcpy.management.JoinField(
+            str(gemd_feature),
+            "SGG_CD",
+            str(sgg_feature),
+            "SIG_CD",
+            fields=["SIG_ENG_NM", "SIG_KOR_NM", "CTP_ENG_NM", "CTP_KOR_NM"],
+        )
+
+        if "SIG_CD" not in arcpy.ListFields(str(ri_feature)):
+            arcpy.management.AddField(
+                str(ri_feature),
+                "SGG_CD",
+                "TEXT",
+                field_length=5,
+                field_alias="시군구 코드",
+            )
+            arcpy.management.CalculateField(str(ri_feature), "SGG_CD", "!LI_CD![:5]")
+        arcpy.AddMessage("Joining Ri")
+        arcpy.management.JoinField(
+            str(ri_feature),
+            "SGG_CD",
+            str(sgg_feature),
+            "SIG_CD",
+            fields=["SIG_ENG_NM", "SIG_KOR_NM", "CTP_ENG_NM", "CTP_KOR_NM"],
+        )
+
+    def postExecute(self, parameters):
+        """This method takes place after outputs are processed and
+        added to the display."""
+        return
+
 
 class CompleteCode(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "CompleteCode"
+        self.label = "법정동-행정동 매칭하기"
         self.description = "법정동만 있는 레이어에 행정동 열을 생성하고 매칭해줍니다."
         self.canRunInBackground = False
 
@@ -235,7 +329,7 @@ class CompleteCode(object):
 class ZipsToGDB(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "ZipsToGDB"
+        self.label = "일괄 압축해제 및 파일 GDB생성하기"
         self.description = "주소기반산업지원서비스에서 내려받은 구역의 도형(.zip)을 한 번에 언패킹하여 파일 GDB로 정리합니다."
         self.canRunInBackground = False
         self.feature_types = {
