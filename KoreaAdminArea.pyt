@@ -19,13 +19,174 @@ class Toolbox(object):
         self.alias = "KoreanAdminAreaCompleteTool"
 
         # List of tool classes associated with this toolbox
-        self.tools = [ZipsToGDB, CompleteCode, JoinRelations]
+        self.tools = [
+            ZipsToGDB,
+            CompleteCode,
+            JoinRelations,
+            StatAdmCodes,
+        ]
+
+
+class StatAdmCodes(object):
+    def __init__(self):
+        """Define the tool (tool name is the name of the class)."""
+        self.label = "4. 통계청 코드 매칭하기"
+        self.description = "통계청 데이터를 쉽게 활용하기 위해 통계청 adm_cd를 매칭한다."
+        self.canRunInBackground = False
+
+    def getParameterInfo(self):
+        """Define parameter definitions"""
+        adm_codes_folder = arcpy.Parameter(
+            displayName="Github에서 내려받은 Adm_cd 폴더를 선택해주세요.",
+            name="adm_codes_folder",
+            datatype="DEFolder",
+            direction="Input",
+        )
+        sido_feature = arcpy.Parameter(
+            displayName="시도 행정경계 피처를 선택해주세요.",
+            name="sido_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        sgg_feature = arcpy.Parameter(
+            displayName="시군구 행정경계 피처를 선택해주세요.",
+            name="sgg_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        gemd_feature = arcpy.Parameter(
+            displayName="읍면동(행정) 행정경계 피처를 선택해주세요.",
+            name="gemd_feature",
+            datatype="DEFeatureClass",
+            direction="Input",
+        )
+        params = [
+            adm_codes_folder,
+            sido_feature,
+            sgg_feature,
+            gemd_feature,
+        ]
+        return params
+
+    def isLicensed(self):
+        """Set whether tool is licensed to execute."""
+        return True
+
+    def updateParameters(self, parameters):
+        """Modify the values and properties of parameters before internal
+        validation is performed.  This method is called whenever a parameter
+        has been changed."""
+        return
+
+    def updateMessages(self, parameters):
+        """Modify the messages created by internal validation for each tool
+        parameter.  This method is called after internal validation."""
+        return
+
+    def execute(self, parameters, messages):
+        """The source code of the tool."""
+        adm_cds = Path(parameters[0].valueAsText)
+        sido_feature = Path(parameters[1].valueAsText)
+        sgg_feature = Path(parameters[2].valueAsText)
+        gemd_feature = Path(parameters[3].valueAsText)
+
+        sido_df = pd.read_csv(
+            str(adm_cds / "sido.csv"),
+            encoding="utf-8",
+            names=["sido_nm", "adm_cd", "avg_age", "population"],
+        ).drop(["avg_age", "population"], axis=1)
+        sgg_df = pd.read_csv(
+            str(adm_cds / "sgg.csv"),
+            encoding="utf-8",
+            names=["sido_nm", "sgg_nm", "adm_cd", "avg_age", "population"],
+        ).drop(["avg_age", "population"], axis=1)
+        gemd_df = pd.read_csv(
+            str(adm_cds / "emd.csv"),
+            encoding="utf-8",
+            names=["sido_nm", "sgg_nm", "emd_nm", "adm_cd", "avg_age", "population"],
+        ).drop(["avg_age", "population"], axis=1)
+
+        if "ADM_CD" not in arcpy.ListFields(str(sido_feature)):
+            arcpy.management.AddField(
+                str(sido_feature),
+                "ADM_CD",
+                "TEXT",
+                field_length=2,
+                field_alias="통계청 코드",
+            )
+        with arcpy.da.UpdateCursor(
+            str(sido_feature), ["CTP_KOR_NM", "ADM_CD"]
+        ) as sido_cursor:
+            for row in sido_cursor:
+                try:
+                    matched_adm = sido_df.loc[sido_df["sido_nm"] == row[0].strip()][
+                        "adm_cd"
+                    ].iloc[0]
+                    row[1] = matched_adm
+                except KeyError as e:
+                    arcpy.AddMessage(f"{row[0]}: KeyError {e}")
+                    row[1] = ""
+                sido_cursor.updateRow(row)
+
+        if "ADM_CD" not in arcpy.ListFields(str(sgg_feature)):
+            arcpy.management.AddField(
+                str(sgg_feature), "ADM_CD", "TEXT", field_length=5, field_alias="통계청 코드"
+            )
+        with arcpy.da.UpdateCursor(
+            str(sgg_feature), ["CTP_KOR_NM", "SIG_KOR_NM", "ADM_CD"]
+        ) as sgg_cursor:
+            for row in sgg_cursor:
+                try:
+                    matched_adm = sgg_df.loc[
+                        (sgg_df["sido_nm"].str.strip() == row[0].strip())
+                        & (sgg_df["sgg_nm"].str.strip() == row[1].strip())
+                    ]["adm_cd"].iloc[0]
+                    row[2] = matched_adm
+                except KeyError as e:
+                    arcpy.AddMessage(f"{row[0]}, {row[1]} KeyError {e}")
+                    row[2] = ""
+                except IndexError as i:
+                    arcpy.AddMessage(f"{row[0]}, {row[1]} IndexError {i}")
+                    row[2] = ""
+                sgg_cursor.updateRow(row)
+
+        if "ADM_CD" not in arcpy.ListFields(str(gemd_feature)):
+            arcpy.management.AddField(
+                str(gemd_feature),
+                "ADM_CD",
+                "TEXT",
+                field_length=8,
+                field_alias="통계청 코드",
+            )
+        with arcpy.da.UpdateCursor(
+            str(gemd_feature), ["CTP_KOR_NM", "SIG_KOR_NM", "EMD_KOR_NM", "ADM_CD"]
+        ) as gemd_cursor:
+            for row in gemd_cursor:
+                try:
+                    matched_adm = gemd_df.loc[
+                        (gemd_df["sido_nm"].str.strip() == row[0].strip())
+                        & (gemd_df["sgg_nm"].str.strip() == row[1].strip())
+                        & (gemd_df["emd_nm"].str.strip() == row[2].strip())
+                    ]["adm_cd"].iloc[0]
+                except KeyError as e:
+                    arcpy.AddMessage(f"{row[0]},{row[1]},{row[2]} KeyError {e}")
+                    row[3] = ""
+                except IndexError as i:
+                    arcpy.AddMessage(f"{row[0]},{row[1]},{row[2]} IndexError {i}")
+                    row[3] = ""
+                gemd_cursor.updateRow(row)
+        return
+
+    def postExecute(self, parameters):
+        """This method takes place after outputs are processed and
+        added to the display."""
+        return
 
 
 class JoinRelations(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "지역 관계 생성하기"
+        self.label = "2. 지역 관계 생성하기"
         self.description = "시도, 시군구, 읍면동, 리간에 관계를 정리한다."
         self.canRunInBackground = False
 
@@ -170,7 +331,7 @@ class JoinRelations(object):
 class CompleteCode(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "법정동-행정동 매칭하기"
+        self.label = "3. 법정동-행정동 매칭하기"
         self.description = "법정동만 있는 레이어에 행정동 열을 생성하고 매칭해줍니다."
         self.canRunInBackground = False
 
@@ -329,7 +490,7 @@ class CompleteCode(object):
 class ZipsToGDB(object):
     def __init__(self):
         """Define the tool (tool name is the name of the class)."""
-        self.label = "일괄 압축해제 및 파일 GDB생성하기"
+        self.label = "1. 일괄 압축해제 및 파일 GDB생성하기"
         self.description = "주소기반산업지원서비스에서 내려받은 구역의 도형(.zip)을 한 번에 언패킹하여 파일 GDB로 정리합니다."
         self.canRunInBackground = False
         self.feature_types = {
